@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "streamlabstiktokstreamkeygenerator"
+version = "0.1.0"
+description = ""
+authors = ["Loukious"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+requests = ">=2.31.0"
+selenium-wire = ">=5.1.0"
+undetected-chromedriver = ">=3.5.5"
+blinker = "1.7.0"
+setuptools = "^75.6.0"
+obsws-python = "1.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

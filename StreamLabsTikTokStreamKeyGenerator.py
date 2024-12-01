@@ -6,6 +6,10 @@ from tkinter import messagebox
 import webbrowser
 from Stream import Stream
 from TokenRetriever import TokenRetriever
+import obsws_python as obsws
+
+# Variable globale pour stocker la connexion OBS
+obs_ws = None
 
 
 def load_config():
@@ -22,7 +26,6 @@ def load_config():
         stream_title_entry.insert(0, data.get("title", ""))
         stream_title_entry.config(state=tk.DISABLED)
 
-
         game_category_entry.config(state=tk.NORMAL)
         game_category_entry.delete(0, tk.END)
         game_category_entry.insert(0, data.get("game", ""))
@@ -31,6 +34,16 @@ def load_config():
         audience_type_checkbox.config(state=tk.NORMAL)
         audience_type_var.set(data.get("audience_type", "0"))
         audience_type_checkbox.config(state=tk.DISABLED)
+
+        # Load OBS WebSocket settings
+        obs_url_entry.delete(0, tk.END)
+        obs_url_entry.insert(0, data.get("obs_url", ""))
+        
+        obs_port_entry.delete(0, tk.END)
+        obs_port_entry.insert(0, data.get("obs_port", ""))
+        
+        obs_password_entry.delete(0, tk.END)
+        obs_password_entry.insert(0, data.get("obs_password", ""))
 
         if token_entry.get():
             global stream
@@ -91,16 +104,21 @@ def fetch_game_mask_id(game_name):
             return category['game_mask_id']
     return ""
 
+
 def save_config():
     """Save entry values to a JSON file."""
     data = {
+        "token": token_entry.get(),
         "title": stream_title_entry.get(),
         "game": game_category_entry.get(),
         "audience_type": audience_type_var.get(),
-        "token": token_entry.get()
+        "obs_url": obs_url_entry.get(),
+        "obs_port": obs_port_entry.get(),
+        "obs_password": obs_password_entry.get()
     }
     with open("config.json", "w") as file:
         json.dump(data, file)
+
 
 def load_token():
     import os
@@ -141,6 +159,7 @@ def load_token():
     messagebox.showinfo("API Token", "No API Token found locally. A webpage will now open to allow you to login into your TikTok account.")
     return None
 
+
 def fetch_online_token():
     retriever = TokenRetriever()
     token = retriever.retrieve_token()
@@ -156,6 +175,7 @@ def fetch_online_token():
         fetch_game_mask_id(game_category_entry.get())
     else:
         messagebox.showerror("Error", "Failed to obtain token online.")
+
 
 def populate_token():
     global stream
@@ -174,6 +194,7 @@ def populate_token():
         # Fetch game_mask_id after token is loaded
         fetch_game_mask_id(game_category_entry.get())
 
+
 def toggle_token_visibility():
     if token_entry.cget('show') == '':
         token_entry.config(show='*')
@@ -182,11 +203,13 @@ def toggle_token_visibility():
         token_entry.config(show='')
         toggle_button.config(text='Hide Token')
 
+
 def on_token_entry_change(*args):
     if token_entry.get():  # Check if the token_entry has any text
         go_live_button.config(state=tk.NORMAL)  # Enable the Go Live button
     else:
         go_live_button.config(state=tk.DISABLED)  # Disable the Go Live button if empty
+
 
 def go_live():
     game_mask_id = getattr(game_category_entry, 'game_mask_id', "")
@@ -234,10 +257,12 @@ def end_live():
     else:
         messagebox.showerror("End Live", "No active stream found.")
 
+
 def copy_to_clipboard(entry):
     root.clipboard_clear()
     root.clipboard_append(entry.get())
     messagebox.showinfo("Copy", "Copied to clipboard!")
+
 
 def show_help():
     help_window = tk.Toplevel(root)
@@ -257,12 +282,14 @@ def show_help():
     help_link.pack()
     help_link.bind("<Button-1>", lambda e: webbrowser.open("https://tiktok.com/falcon/live_g/live_access_pc_apply/result/index.html?id=GL6399433079641606942&lang=en-US"))
 
+
 def on_keyrelease(event):
     value = event.widget.get()
     if value == '':
         listbox.pack_forget()
     else:
         threading.Thread(target=search_and_update_listbox, args=(value,)).start()
+
 
 def search_and_update_listbox(value):
     categories = stream.search(value)
@@ -273,6 +300,7 @@ def search_and_update_listbox(value):
         listbox.pack(fill='x', pady=(0, 10))
     else:
         listbox.pack_forget()
+
 
 def on_select(event):
     widget = event.widget
@@ -285,6 +313,7 @@ def on_select(event):
         game_category_entry.game_mask_id = fetch_game_mask_id(data)
         listbox.pack_forget()
 
+
 def on_motion(event):
     widget = event.widget
     widget.focus_set()
@@ -292,6 +321,29 @@ def on_motion(event):
     index = widget.nearest(event.y)
     widget.selection_set(index)
     widget.activate(index)
+
+
+def connect_to_obs():
+    """Établit une connexion avec OBS via WebSocket."""
+    global obs_ws
+    try:
+        # Récupérer les paramètres de connexion
+        host = obs_url_entry.get()
+        port = int(obs_port_entry.get())
+        password = obs_password_entry.get() or None  # None si pas de mot de passe
+
+        # Créer une nouvelle connexion
+        obs_ws = obsws.ReqClient(host=host, port=port, password=password)
+        
+        # Tester la connexion en récupérant la version d'OBS
+        version = obs_ws.get_version()
+        
+        messagebox.showinfo("Success", f"Connected to OBS Studio {version.obs_version}")
+        
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to connect to OBS: {str(e)}")
+        obs_ws = None
+
 
 # Create the main window
 root = tk.Tk()
@@ -414,15 +466,45 @@ stream_key_entry.pack(pady=5)
 copy_key_button = tk.Button(control_frame, text="Copy Key", command=lambda: copy_to_clipboard(stream_key_entry))
 copy_key_button.pack(pady=5)
 
+# Create a LabelFrame for OBS WebSocket settings
+obs_frame = tk.LabelFrame(root, text="OBS WebSocket")
+obs_frame.grid(row=5, column=0, columnspan=2, padx=10, pady=5, sticky='ew')
+
+# URL
+obs_url_label = tk.Label(obs_frame, text="URL:")
+obs_url_label.grid(row=0, column=0, padx=5, pady=5, sticky='w')
+obs_url_entry = tk.Entry(obs_frame)
+obs_url_entry.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
+obs_url_entry.insert(0, "localhost")
+
+# Port
+obs_port_label = tk.Label(obs_frame, text="Port:")
+obs_port_label.grid(row=1, column=0, padx=5, pady=5, sticky='w')
+obs_port_entry = tk.Entry(obs_frame)
+obs_port_entry.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
+obs_port_entry.insert(0, "4455")
+
+# Password (optionnel)
+obs_password_label = tk.Label(obs_frame, text="Password (optional):")
+obs_password_label.grid(row=2, column=0, padx=5, pady=5, sticky='w')
+obs_password_entry = tk.Entry(obs_frame, show="*")
+obs_password_entry.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
+
+# Bouton de connexion
+connect_obs_button = tk.Button(obs_frame, text="Test Connection", command=connect_to_obs)
+connect_obs_button.grid(row=3, column=0, columnspan=2, padx=5, pady=5)
+
+obs_frame.grid_columnconfigure(1, weight=1)
+
 save_config_button = tk.Button(root, text="Save Config", command=save_config)
-save_config_button.grid(row=2, column=0, padx=10, pady=10, columnspan=2, sticky='ew')
+save_config_button.grid(row=6, column=0, padx=10, pady=10, columnspan=2, sticky='ew')
 
 # Create a "Help" button
 help_button = tk.Button(root, text="Help", command=show_help)
-help_button.grid(row=3, column=0, padx=10, pady=10, columnspan=2, sticky='ew')
+help_button.grid(row=7, column=0, padx=10, pady=10, columnspan=2, sticky='ew')
 
 open_live_monitor_button = tk.Button(root, text="Open Live Monitor", command=lambda: webbrowser.open("https://livecenter.tiktok.com/live_monitor?lang=en-US"))
-open_live_monitor_button.grid(row=4, column=0, padx=10, pady=10, columnspan=2, sticky='ew')
+open_live_monitor_button.grid(row=8, column=0, padx=10, pady=10, columnspan=2, sticky='ew')
 
 # Configure the grid weights for proper resizing behavior
 root.grid_columnconfigure(0, weight=1)
@@ -431,6 +513,11 @@ root.grid_rowconfigure(0, weight=1)
 root.grid_rowconfigure(1, weight=1)
 root.grid_rowconfigure(2, weight=1)
 root.grid_rowconfigure(3, weight=1)
+root.grid_rowconfigure(4, weight=1)
+root.grid_rowconfigure(5, weight=1)
+root.grid_rowconfigure(6, weight=1)
+root.grid_rowconfigure(7, weight=1)
+root.grid_rowconfigure(8, weight=1)
 
 # Start the Tkinter event loop
 if __name__ == "__main__":
